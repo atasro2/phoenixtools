@@ -21,7 +21,8 @@
 *.[Mm][Aa][Pp]
 *.[Ss][Yy][Mm]
 *.[Ee][Ll][Ff]
-
+*.phscr
+*.lz
 # Archives
 #-------------------------
 *.7[Zz]

@@ -34,6 +34,22 @@ int getMemidxIndex( unsigned int memidx, uint32_t *list, unsigned int count ) {
 	return -1;
 }
 
+int getSectionFromOffset( unsigned int off, uint32_t *list, unsigned int count, unsigned int scriptSize ) {
+	int i;
+	uint32_t byteOff = off * 2, sub = list[0];
+	/*
+	if(byteOff >= scriptSize) 
+		return -1;
+	if(list[count-1] - sub <= byteOff && byteOff < scriptSize )
+		return count-1;
+	*/
+	for( i = 0; i < count; i++ )
+	{
+		if((list[i] - sub) <= byteOff && byteOff < (list[i+1] - sub)) return i;
+	}
+	return -1;
+}
+
 int isLabelLocation(jumplutpack *lut, unsigned count, unsigned section, unsigned offset) {
 	for(unsigned i = 0; i < count; i++) if(section == lut[i].section && offset == lut[i].offset/2) return i;
 	return -1;
@@ -95,8 +111,9 @@ void escapeText(char *dst, char* src) {
 int main( int argc, char **argv ) {
 	FILE *f, *o;
 	unsigned i, j;
-	unsigned int fileSize, gamenum, intext;
+	unsigned int fileSize, gamenum, intext, localjumps;
 	uint32_t numScripts, *scriptOffsets = NULL, *jumplutaddrs = NULL;
+	jumplutpack *localjumpoffsets = NULL;
 	//~ command *curop;
 	char escapebuf[OUTBUFSIZE*2];
 	struct scriptstate state;
@@ -163,6 +180,7 @@ int main( int argc, char **argv ) {
 	scriptOffsets = malloc( numScripts * sizeof(uint32_t));
 	/* need this to find number of sections and specialdata */
 	jumplutaddrs = malloc( numScripts * sizeof(uint32_t));
+	localjumpoffsets = malloc( 1 * sizeof(jumplutpack));
 	
 	fread(scriptOffsets, sizeof(uint32_t)*numScripts, 1, f);
 	
@@ -190,12 +208,21 @@ int main( int argc, char **argv ) {
 	/* find the beginning and amount of "special" data */
 	/* parse the script, catching all cmd35 and cmd36/78 (which are known to use special data)
 	   and saving the indices of the "scriptOffsets" they access */
-	for(i = 0, j = 0; i < state.scriptsize/2; i++) {
+	for(i = 0, j = 0, localjumps = 0; i < state.scriptsize/2; i++) {
 		if(state.script[i] > 0x7F || (state.gamenum == GAME_APOLLO && state.script[i] > 0x8F)) continue;
 		switch(state.script[i]) {
 			case 0x35: {
 				if(state.script[i+1] & 0x80 && state.script[i+2] && numScripts > state.script[i+2]) {
 					jumplutaddrs[j++] = state.script[i+2];
+				}
+				else if (!(state.script[i+1] & 0x80)) {
+					// function here is taking arguemnts that we know about but they are not exactly perfect 
+					uint32_t currentSection = getSectionFromOffset( i, scriptOffsets, numScripts, state.scriptsize );
+					localjumpoffsets[localjumps].offset = state.script[i+2];
+					localjumpoffsets[localjumps].section = currentSection;
+					printf("local jump at section %u on offset %u to offset %u\n", localjumpoffsets[localjumps].section, i-(scriptOffsets[currentSection] - scriptOffsets[0])/2, localjumpoffsets[localjumps].offset/2);
+					localjumps++;
+					localjumpoffsets = realloc(localjumpoffsets, (localjumps+1) * sizeof(jumplutpack));
 				}
 				i += 2;
 				break;
@@ -270,6 +297,9 @@ int main( int argc, char **argv ) {
 		if(isLabelLocation(state.jumplut, state.numjumplut, state.section, state.scriptidx - state.sectionoff) > -1) {
 			state.textidx += sprintf( state.textfile+state.textidx, "label%u_%u:\n", state.section, state.scriptidx - state.sectionoff);
 		}
+		else if(isLabelLocation(localjumpoffsets, localjumps, state.section, state.scriptidx - state.sectionoff) > -1) {
+			state.textidx += sprintf( state.textfile+state.textidx, ".label%u_%u:\n", state.section, state.scriptidx - state.sectionoff);
+		}
 		//~ printf("memidx %08x (off %08x)\n", state.scriptidx, state.scriptidx*2+numScripts*4);
 		if(prepareToken(&state.script[state.scriptidx], state.gamenum, state.isjp, state.isunity)) {
 			if(!intext) {
@@ -331,12 +361,12 @@ int main( int argc, char **argv ) {
 		}
 		else {
 			// do indentation
-			if(!intext) state.textidx += sprintf(state.textfile+state.textidx, " %04u\t", state.scriptidx - state.sectionoff);
+			if(!intext) state.textidx += sprintf(state.textfile+state.textidx, "\t");
 			if(state.outidx && state.script[state.scriptidx] != 0x01) {
 				// escape collected text
 				escapeText(escapebuf, state.outbuf);
 				// print collected text and do indentation for command
-				state.textidx += sprintf(state.textfile+state.textidx, " %04u\ttext \"%s\"\n %04u\t", state.textstart-state.sectionoff, escapebuf, state.scriptidx - state.sectionoff);
+				state.textidx += sprintf(state.textfile+state.textidx, "\ttext \"%s\"\n\t", escapebuf);
 				state.outidx = 0;
 				state.outbuf[0] = 0;
 				intext = 0;
@@ -355,6 +385,7 @@ int main( int argc, char **argv ) {
 	free(outfilename);
 	free(scriptOffsets);
 	free(jumplutaddrs);
+	free(localjumpoffsets);
 	free(state.script);
 	free(state.textfile);
 	free(state.outbuf);

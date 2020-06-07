@@ -436,11 +436,11 @@ unsigned printCmd35(struct scriptstate *state) {
 			offset = state->jumplut[specialindex].offset / 2;
 			targetsection = state->jumplut[specialindex].section;
 			fprintf(stderr, "%s at %08x in section %u is farjump to %u + %u using specialindex %08x\n", commands[state->script[state->scriptidx]].name, state->scriptidx, state->section, targetsection, offset, specialindex);
-			state->textidx += sprintf(state->textfile+state->textidx, "%s %s, %u, %s, label%u_%u\n", commands[state->script[state->scriptidx]].name, cmd35flaghint[flaghint], whichflag, cmd35jumphint[jumphint], targetsection, offset);
+			state->textidx += sprintf(state->textfile+state->textidx, "%s %s, %u, label%u_%u\n", commands[state->script[state->scriptidx]].name, cmd35flaghint[flaghint], whichflag, targetsection, offset);
 		}
 		else {
 			offset = spcidx_thisoffset/2;
-			state->textidx += sprintf(state->textfile+state->textidx, "%s %s, %u, %s, %u\n", commands[state->script[state->scriptidx]].name, cmd35flaghint[flaghint], whichflag, cmd35jumphint[jumphint], offset);
+			state->textidx += sprintf(state->textfile+state->textidx, "%s %s, %u, .label%u_%u\n", commands[state->script[state->scriptidx]].name, cmd35flaghint[flaghint], whichflag, state->section, offset);
 		}
 		//~ state->textidx += sprintf(state->textfile+state->textidx, "%s %s, %u, %u + %u\n", commands[state->script[state->scriptidx]].name, cmd35flaghint[flaghint], whichflag, targetsection, offset);
 		state->scriptidx += 1+2;
